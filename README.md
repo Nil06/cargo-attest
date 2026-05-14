@@ -121,7 +121,7 @@ Current checks are intentionally limited:
 - GitHub release metadata;
 - release tag resolution;
 - GitHub asset size;
-- SHA-256 checksums.
+- SHA-256 checksums;
 - GitHub artifact attestation bundle lookup.
 
 It does not yet cryptographically verify GitHub artifact attestation bundles, SLSA provenance, or sigstore/cosign signatures. Treat `TRUSTED` as "the implemented checks passed", not as a complete supply-chain guarantee.
