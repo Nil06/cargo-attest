@@ -13,6 +13,7 @@ The GitHub Release verification path is usable today:
 - download the selected artifact;
 - verify downloaded size against GitHub metadata;
 - verify SHA-256 from the release body or a checksum sidecar;
+- look up GitHub artifact attestation bundles for the computed SHA-256;
 - emit a human verdict or JSON;
 - return stable CI-friendly exit codes.
 
@@ -66,7 +67,8 @@ The GitHub Release verification path is usable today:
 
 ### v0.3 - GitHub Artifact Provenance
 
-- [ ] Integrate GitHub artifact attestations.
+- [x] Look up GitHub artifact attestation bundles by artifact SHA-256.
+- [ ] Cryptographically verify GitHub artifact attestation bundles.
 - [ ] Verify the chain `artifact -> workflow run -> commit`.
 - [ ] Include provenance checks in human and JSON verdicts.
 
@@ -92,7 +94,7 @@ The GitHub Release verification path is usable today:
 
 ## Open Questions
 
-- How strict should `TRUSTED` be before GitHub artifact attestations are implemented?
+- Should discovered but unverified GitHub artifact attestations ever affect `TRUSTED`, or only fully verified bundles?
 - Should the JSON schema be versioned before crates.io support lands?
 - What is the right default cache location and eviction policy?
 - Should `cargo-attest` stay a CLI-only tool, or eventually expose a library API?

@@ -4,6 +4,7 @@ pub mod github {
     use std::time::Duration;
 
     use anyhow::{anyhow, Context, Result};
+    use reqwest::StatusCode;
     use serde::Deserialize;
 
     const USER_AGENT: &str = concat!("cargo-attest/", env!("CARGO_PKG_VERSION"));
@@ -24,6 +25,18 @@ pub mod github {
         pub name: String,
         pub download_url: String,
         pub size: u64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct AttestationSummary {
+        pub count: usize,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum AttestationFetch {
+        Count(usize),
+        Missing,
+        Denied(StatusCode),
     }
 
     #[derive(Deserialize)]
@@ -59,16 +72,25 @@ pub mod github {
     }
 
     fn client() -> Result<reqwest::blocking::Client> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::ACCEPT,
+            reqwest::header::HeaderValue::from_static("application/vnd.github+json"),
+        );
+        headers.insert(
+            "X-GitHub-Api-Version",
+            reqwest::header::HeaderValue::from_static("2022-11-28"),
+        );
+
         let mut builder = reqwest::blocking::Client::builder()
             .user_agent(USER_AGENT)
             .timeout(Duration::from_secs(30));
         if let Ok(token) = std::env::var("GH_TOKEN").or_else(|_| std::env::var("GITHUB_TOKEN")) {
-            let mut headers = reqwest::header::HeaderMap::new();
             let val = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
                 .context("invalid GH_TOKEN header value")?;
             headers.insert(reqwest::header::AUTHORIZATION, val);
-            builder = builder.default_headers(headers);
         }
+        builder = builder.default_headers(headers);
         builder.build().context("building HTTP client")
     }
 
@@ -135,6 +157,92 @@ pub mod github {
             .error_for_status()?
             .text()
             .context("reading text asset")
+    }
+
+    /// Look up GitHub artifact attestations for a subject digest.
+    ///
+    /// This only discovers matching attestation bundles. Cryptographic bundle
+    /// verification and signer identity validation are handled by later checks.
+    pub fn fetch_artifact_attestations(owner: &str, sha256: &str) -> Result<AttestationSummary> {
+        let c = client()?;
+        let subject_digest = format!("sha256:{}", sha256.to_ascii_lowercase());
+        let mut denied = None;
+
+        for endpoint in [
+            format!("{API_BASE}/orgs/{owner}/attestations/{subject_digest}?per_page=100"),
+            format!("{API_BASE}/users/{owner}/attestations/{subject_digest}?per_page=100"),
+        ] {
+            match fetch_attestation_count(&c, &endpoint)? {
+                AttestationFetch::Count(count) => return Ok(AttestationSummary { count }),
+                AttestationFetch::Missing => continue,
+                AttestationFetch::Denied(status) => {
+                    denied = Some(status);
+                    continue;
+                }
+            }
+        }
+
+        if let Some(status) = denied {
+            return Err(anyhow!(
+                "GitHub attestation API denied the request ({status}); set GH_TOKEN or GITHUB_TOKEN to retry"
+            ));
+        }
+
+        Ok(AttestationSummary { count: 0 })
+    }
+
+    fn fetch_attestation_count(
+        c: &reqwest::blocking::Client,
+        endpoint: &str,
+    ) -> Result<AttestationFetch> {
+        let resp = c
+            .get(endpoint)
+            .send()
+            .with_context(|| format!("GET {endpoint}"))?;
+        if resp.status() == StatusCode::NOT_FOUND {
+            return Ok(AttestationFetch::Missing);
+        }
+        if matches!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ) {
+            return Ok(AttestationFetch::Denied(resp.status()));
+        }
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(anyhow!("GitHub attestation lookup failed: {status}"));
+        }
+
+        let body: serde_json::Value = resp.json().context("parsing attestation JSON")?;
+        Ok(AttestationFetch::Count(attestation_count(&body)))
+    }
+
+    fn attestation_count(body: &serde_json::Value) -> usize {
+        if let Some(attestations) = body.get("attestations").and_then(|value| value.as_array()) {
+            return attestations.len();
+        }
+        body.as_array().map_or(0, Vec::len)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use serde_json::json;
+
+        use super::*;
+
+        #[test]
+        fn counts_attestations_from_object_response() {
+            let body = json!({ "attestations": [{}, {}] });
+
+            assert_eq!(attestation_count(&body), 2);
+        }
+
+        #[test]
+        fn counts_attestations_from_array_response() {
+            let body = json!([{}, {}, {}]);
+
+            assert_eq!(attestation_count(&body), 3);
+        }
     }
 }
 

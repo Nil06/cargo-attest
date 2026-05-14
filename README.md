@@ -41,12 +41,14 @@ GitHub Release verification is implemented:
 - downloads the artifact locally;
 - checks downloaded size against GitHub metadata;
 - verifies SHA-256 from the release body or checksum sidecars;
+- looks up GitHub artifact attestation bundles for the computed SHA-256;
 - prints human output or JSON;
 - exits with stable CI-friendly codes.
 
 Planned next:
 
-- GitHub artifact attestations and workflow provenance;
+- cryptographic verification of GitHub artifact attestation bundles;
+- workflow provenance checks;
 - crates.io `.crate` verification;
 - sigstore/cosign verification.
 
@@ -75,9 +77,10 @@ Example output:
 
 ```text
 TRUSTED
-  ✓ tag-resolves-to-commit — tag 14.1.1 -> 4649aa970061
+  ✓ tag-resolves-to-commit — tag 14.1.1 → 4649aa970061
   ✓ asset-size:ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz — downloaded 2566310 bytes, matching GitHub metadata
-  ✓ sha256-body-checksum:ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz — declared via sidecar asset ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz.sha256 and computed SHA-256 match
+  ✓ sha256-body-checksum:ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz — declared via sidecar asset ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz.sha256 and computed SHA-256 match (4cf9f2741e6c465f)
+  · github-artifact-attestation:ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz — lookup unavailable: GitHub attestation API denied the request (401 Unauthorized); set GH_TOKEN or GITHUB_TOKEN to retry
 ```
 
 ## JSON Output
@@ -119,8 +122,11 @@ Current checks are intentionally limited:
 - release tag resolution;
 - GitHub asset size;
 - SHA-256 checksums.
+- GitHub artifact attestation bundle lookup.
 
-It does not yet verify GitHub artifact attestations, SLSA provenance, or sigstore/cosign signatures. Treat `TRUSTED` as "the implemented checks passed", not as a complete supply-chain guarantee.
+It does not yet cryptographically verify GitHub artifact attestation bundles, SLSA provenance, or sigstore/cosign signatures. Treat `TRUSTED` as "the implemented checks passed", not as a complete supply-chain guarantee.
+
+GitHub attestation lookup uses public API access when available. If GitHub denies an unauthenticated request, set `GH_TOKEN` or `GITHUB_TOKEN` and rerun the command.
 
 ## Development
 

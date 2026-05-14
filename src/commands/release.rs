@@ -1,6 +1,6 @@
 //! `cargo attest release <repo> <tag>` — attest a GitHub release artifact.
 //!
-//! v0.2 flow:
+//! v0.3 flow:
 //! 1. Fetch release metadata from GitHub API.
 //! 2. Resolve the tag → commit SHA (proves the release points at a real commit).
 //! 3. Select asset(s) — filter by --asset if given, else attest each one.
@@ -9,6 +9,7 @@
 //!    b. Download the asset to a temp file.
 //!    c. Hash it.
 //!    d. Compare. Emit Pass / Fail / Skip check.
+//!    e. Look up GitHub artifact attestations for the computed SHA-256.
 //! 5. Aggregate checks into a Verdict.
 
 use anyhow::{Context, Result};
@@ -129,6 +130,7 @@ pub fn run(repo: &str, tag: &str, asset_filter: Option<&str>) -> Result<()> {
                         detail: format!("declared {} != computed {actual}", decl.value),
                     });
                 }
+                push_attestation_lookup_check(&mut checks, repo, &asset.name, &actual);
             }
         }
     }
@@ -152,6 +154,46 @@ pub fn run(repo: &str, tag: &str, asset_filter: Option<&str>) -> Result<()> {
 
     emit(&v);
     std::process::exit(v.exit_code());
+}
+
+fn push_attestation_lookup_check(checks: &mut Vec<Check>, repo: &str, asset_name: &str, sha: &str) {
+    let name = format!("github-artifact-attestation:{}", asset_name);
+    let short_sha = &sha[..sha.len().min(16)];
+    let Some(owner) = repo_owner(repo) else {
+        checks.push(Check {
+            name,
+            outcome: CheckOutcome::Skip,
+            detail: "repo is not in owner/name form".into(),
+        });
+        return;
+    };
+
+    match github::fetch_artifact_attestations(owner, sha) {
+        Ok(summary) if summary.count > 0 => checks.push(Check {
+            name,
+            outcome: CheckOutcome::Pass,
+            detail: format!(
+                "found {} GitHub artifact attestation bundle(s) for sha256:{short_sha}; bundle verification is not implemented yet",
+                summary.count
+            ),
+        }),
+        Ok(_) => checks.push(Check {
+            name,
+            outcome: CheckOutcome::Skip,
+            detail: format!("no GitHub artifact attestation found for sha256:{short_sha}"),
+        }),
+        Err(err) => checks.push(Check {
+            name,
+            outcome: CheckOutcome::Skip,
+            detail: format!("lookup unavailable: {err:#}"),
+        }),
+    }
+}
+
+fn repo_owner(repo: &str) -> Option<&str> {
+    repo.split_once('/')
+        .map(|(owner, _name)| owner)
+        .filter(|owner| !owner.is_empty())
 }
 
 fn declared_checksum_for(
@@ -295,5 +337,12 @@ mod tests {
         assert!(is_checksum_sidecar("tool.tar.gz.sha256sum"));
         assert!(is_checksum_sidecar("tool.tar.gz.sha256.txt"));
         assert!(!is_checksum_sidecar("tool.tar.gz"));
+    }
+
+    #[test]
+    fn extracts_repo_owner() {
+        assert_eq!(repo_owner("owner/repo"), Some("owner"));
+        assert_eq!(repo_owner("/repo"), None);
+        assert_eq!(repo_owner("repo"), None);
     }
 }
