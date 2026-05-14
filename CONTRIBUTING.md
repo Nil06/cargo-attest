@@ -20,7 +20,7 @@ cargo test --test release_real -- --ignored
 
 ## Project Direction
 
-The roadmap lives in [SCHEMA_DIRECTEUR.md](SCHEMA_DIRECTEUR.md). Before making a larger change, check that it fits the current scope:
+The roadmap lives in [ROADMAP.md](ROADMAP.md). Before making a larger change, check that it fits the current scope:
 
 - consumer-side verification;
 - no bit-for-bit rebuilds;
