@@ -1,0 +1,33 @@
+[package]
+name = "cargo-attest"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.86.0"
+description = "Attest that published Rust binaries match their source — consumer-side supply-chain trust for crates.io and GitHub releases."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Nil06/cargo-attest"
+readme = "README.md"
+keywords = ["cargo", "supply-chain", "reproducible-builds", "security", "attestation"]
+categories = ["command-line-utilities", "development-tools::cargo-plugins"]
+
+[[bin]]
+name = "cargo-attest"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+thiserror = "2.0"
+sha2 = "0.10"
+hex = "0.4"
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+tempfile = "3.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
