@@ -1,51 +1,62 @@
+<div align="center">
+
 # cargo-attest
 
-> Verify that a published Rust binary is backed by the source it claims, without rebuilding it.
+Verify published Rust binaries against the source they claim, without rebuilding them.
 
-`cargo-attest` is a Cargo subcommand for consumer-side supply-chain checks. Given a GitHub release or a future crates.io artifact, it gathers the available provenance signals, hashes the downloaded artifact, and returns an actionable verdict:
+<p>
+  <a href="https://github.com/Nil06/cargo-attest/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Nil06/cargo-attest/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="MSRV" src="https://img.shields.io/badge/MSRV-1.86-blue">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green">
+  <img alt="Status" src="https://img.shields.io/badge/status-early%20alpha-orange">
+</p>
 
-- `TRUSTED`: at least one load-bearing proof matched.
-- `UNVERIFIED`: no proof was broken, but there was not enough evidence.
-- `MISMATCH`: a declared proof was present and did not match.
-- `ERROR`: the run itself failed.
+</div>
 
-The goal is not to replace reproducible builds. The goal is to give users, package maintainers, and security teams a fast way to answer: "Does this published binary line up with the source it points to?"
+`cargo-attest` is a Cargo subcommand for consumer-side supply-chain checks. It downloads a published artifact, gathers the evidence that links it to source, and returns a verdict you can use in a terminal or CI job.
 
-## Status
+It is built for a simple question:
 
-`cargo-attest` is early, but the GitHub Release path already works.
+> Does this binary line up with the source and release metadata it points to?
 
-Current support:
+## Why
 
-- resolve a GitHub release tag to a commit;
-- select release assets with `--asset`;
-- download the asset locally;
-- verify downloaded byte size against GitHub metadata;
-- verify SHA-256 from the release body or a checksum sidecar;
-- emit human output or JSON;
-- return stable exit codes for CI.
+Rust has strong source-level tooling, but many users consume compiled artifacts from GitHub Releases, package managers, Docker images, and CI pipelines. Rebuilding every binary bit-for-bit is valuable, but it is expensive and rare in everyday workflows.
+
+`cargo-attest` takes a pragmatic path: verify the evidence publishers already provide, then make the result explicit.
+
+| Verdict | Meaning |
+| --- | --- |
+| `TRUSTED` | At least one load-bearing proof matched. |
+| `UNVERIFIED` | Nothing was proven wrong, but evidence was missing. |
+| `MISMATCH` | Published evidence exists and does not match the artifact. |
+| `ERROR` | The command could not complete. |
+
+## What Works Today
+
+GitHub Release verification is implemented:
+
+- resolves the release tag to a commit;
+- selects assets with `--asset`;
+- downloads the artifact locally;
+- checks downloaded size against GitHub metadata;
+- verifies SHA-256 from the release body or checksum sidecars;
+- prints human output or JSON;
+- exits with stable CI-friendly codes.
 
 Planned next:
 
 - GitHub artifact attestations and workflow provenance;
-- crates.io metadata and `.crate` verification;
+- crates.io `.crate` verification;
 - sigstore/cosign verification.
 
-See [ROADMAP.md](ROADMAP.md) for the working roadmap.
+## Quick Start
 
-## Installation
-
-Not published to crates.io yet.
-
-From a local checkout:
+Not published to crates.io yet. From a checkout:
 
 ```bash
 cargo install --path .
 ```
-
-MSRV: Rust 1.86.
-
-## Usage
 
 Hash a local file:
 
@@ -53,7 +64,7 @@ Hash a local file:
 cargo attest hash ./my-binary
 ```
 
-Verify a GitHub release asset:
+Verify a real GitHub Release asset:
 
 ```bash
 cargo attest release BurntSushi/ripgrep 14.1.1 \
@@ -69,12 +80,23 @@ TRUSTED
   ✓ sha256-body-checksum:ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz — declared via sidecar asset ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz.sha256 and computed SHA-256 match
 ```
 
-Machine-readable output:
+## JSON Output
+
+Set `CARGO_ATTEST_JSON=1`:
 
 ```bash
 CARGO_ATTEST_JSON=1 cargo attest release BurntSushi/ripgrep 14.1.1 \
   --asset ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
 ```
+
+Exit codes:
+
+| Code | Verdict |
+| ---: | --- |
+| 0 | `TRUSTED` |
+| 1 | `UNVERIFIED` |
+| 2 | `MISMATCH` |
+| 3 | `ERROR` |
 
 ## Checksum Discovery
 
@@ -85,18 +107,24 @@ For v0.2, `cargo-attest` accepts common SHA-256 publication patterns:
 - a sidecar asset named `<asset>.sha256sum`;
 - a sidecar asset named `<asset>.sha256.txt`.
 
-If a checksum is found and matches the downloaded artifact, the verdict is `TRUSTED`. If no usable checksum is found, the verdict is `UNVERIFIED`. If a checksum is found but does not match, the verdict is `MISMATCH`.
+If no usable checksum is found, the artifact is `UNVERIFIED`, not `TRUSTED`.
 
-## Exit Codes
+## Security Model
 
-| Code | Verdict |
-| ---: | --- |
-| 0 | `TRUSTED` |
-| 1 | `UNVERIFIED` |
-| 2 | `MISMATCH` |
-| 3 | `ERROR` |
+`cargo-attest` does not execute downloaded artifacts. It downloads bytes, hashes them, and compares them to public release evidence.
+
+Current checks are intentionally limited:
+
+- GitHub release metadata;
+- release tag resolution;
+- GitHub asset size;
+- SHA-256 checksums.
+
+It does not yet verify GitHub artifact attestations, SLSA provenance, or sigstore/cosign signatures. Treat `TRUSTED` as "the implemented checks passed", not as a complete supply-chain guarantee.
 
 ## Development
+
+MSRV: Rust 1.86.
 
 ```bash
 cargo fmt --all -- --check
@@ -104,17 +132,15 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-The real-network GitHub release test is ignored by default:
+Run the real-network GitHub release test:
 
 ```bash
 cargo test --test release_real -- --ignored
 ```
 
-## Security Model
+## Roadmap
 
-`cargo-attest` only consumes public release metadata and artifacts. It does not execute downloaded artifacts. It currently verifies published hashes and basic GitHub release metadata; it does not yet verify GitHub artifact attestations, SLSA provenance, or sigstore/cosign signatures.
-
-Treat `TRUSTED` as "the implemented checks passed", not as a complete supply-chain guarantee.
+See [ROADMAP.md](ROADMAP.md).
 
 ## License
 
